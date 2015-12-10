@@ -1,387 +1,569 @@
-import copy
+
 import math
-import pygame, sys
+import sys
 import random
-from pygame.locals import *
 from Constants import *
+from pygame.locals import QUIT
+import csv
+import cProfile
 
 # Buildings total, is not constant
 houseAmount = 20
 
-# clears all layers
-def initialize_tilemaps():
-    global tileMap
-    # a list representing our base tileMap filled with grass
-    tileMap = [[grass for w in range(mapWidth)] for h in range(mapHeight)]
-    global tilemap_required_margins
-    # another tilemap layer representing the required margins
-    tilemap_required_margins = [[None for w in range(mapWidth)] for h in range(mapHeight)]
-    # any extra space around the margin that is calculated goes in this layer
-    global tilemap_extra_space
-    tilemap_extra_space = [[None for w in range(mapWidth)] for h in range(mapHeight)]
-initialize_tilemaps()
+# keep track of positions of building
+buildingList = [largeHouse] * int(houseAmount * 0.15) + [mediumHouse] * int(houseAmount * 0.25) + [smallHouse] * int(
+    houseAmount * 0.6)
 
 
-def check_valid_location(row,column,buildingType,map):
-    for y in range(row - buildingSizes[buildingType][2], int(math.ceil(row + buildingSizes[buildingType][1] + buildingSizes[buildingType][2])), 1):
-        for x in range(column - buildingSizes[buildingType][2], int(math.ceil(column + buildingSizes[buildingType][0]) + buildingSizes[buildingType][2]), 1):
-            if x > mapWidth - 1 or y > mapHeight - 1:
-                return False
-            elif map[y][x] != grass:
-                return False
-    return True
+def place_water():
+    # random water bodies..
+    amount_of_bodies = random.randint(1,4)
+    single_body_square = mapWidth * mapHeight * 0.2 / amount_of_bodies
+    square_side = int(math.sqrt(single_body_square))
+
+    water_bodies = []
+    water_coords = []
+    water_grid = [(x,y) for y in range(square_side,mapHeight - square_side,square_side) for x in range(square_side,mapWidth - square_side,square_side)]
+    random.shuffle(water_grid)
+    for i in range(1,amount_of_bodies + 1):
+        width, height = square_side, square_side
+        x, y = water_grid.pop()
+        water_coords += [(x1,y1) for y1 in range(y,y + height) for x1 in range(x, x + width)]
+        water_bodies.append([x,y,width,height])
+
+    return water_bodies, water_coords
+
+def place_close_together():
+    building_locations = []
+    id = 0
+    tiles_apart = 5
+
+    grid = [(x,y) for y in range(tiles_apart/2,mapHeight,tiles_apart) for x in range(tiles_apart/2,mapWidth,tiles_apart)]
+    random.shuffle(grid)
+    for house in buildingList:
+        id += 1
+        while len(grid) > 0:
+            x,y = grid.pop(0)
+            print x,y
+            house_object = [id, house, x, y]
+            temp_locations = building_locations + [house_object]
+            valid = True
+            for house_comparison in temp_locations:
+                if get_shortest_distance(house_comparison, temp_locations) < 0:
+                    valid = False
+                    break
+            if valid:
+                building_locations.append([id, house, x, y])
+                break
+        else:
+            print "ERROR PLACING BUILDING!!"
+
+    return building_locations
 
 
-def place_building(place_row,place_column,buildingType,map):
-    for row in range(place_row, int(math.ceil(place_row + buildingSizes[buildingType][1])), 1):
-        for column in range(place_column, int(place_column + math.ceil(buildingSizes[buildingType][0])), 1):
-            map[row][column] = buildingType
-
-def clear_building(clear_row,clear_column,buildingType,map,replace_with):
-    for row in range(clear_row, int(math.ceil(clear_row + buildingSizes[buildingType][1])), 1):
-        for column in range(clear_column, int(clear_column + math.ceil(buildingSizes[buildingType][0])), 1):
-            map[row][column] = replace_with
-
-def pickup_building(buildingType,x,y):
-    global tileMap
-    # find the upper left corner
-    while tileMap[y][x - 1] == buildingType:
-        x -= 1
-    while tileMap[y - 1][x] == buildingType:
-        y -= 1
-
-    # loop over the area and replace the tiles with grass
-    for row in range(y, int(math.ceil(y + buildingSizes[buildingType][1])), 1):
-        for column in range(x, int(x + math.ceil(buildingSizes[buildingType][0])), 1):
-            tileMap[row][column] = grass
-
-    # start
-# add all required buildings to the tileMap at random positions for now
+# add all required buildings to the array at random valid locations
 def place_random_buildings():
-    global tileMap
-    global tilemap_required_margins
-    # build up an array with all the required buildings
-    buildingList = [largeHouse] * int(houseAmount * 0.15) + [mediumHouse] * int(houseAmount * 0.25) + [smallHouse] * int(houseAmount * 0.6)
-    # reset tilemaps
-    initialize_tilemaps()
-    # i = amount of houses found
-    houses_found = 0
-    error = False
-    while houses_found != houseAmount and not error:
-        randomBuilding = buildingList.pop()
-        attempt = 0
-        while True:  # selects a random position and check if it's empty (grass).. loops until found empty spot, might be infinite if there's no valid location left
-            randomRow = random.randint(buildingSizes[randomBuilding][2], mapHeight - 1 - int(math.ceil(buildingSizes[randomBuilding][1])) - buildingSizes[randomBuilding][2])
-            randomColumn = random.randint(buildingSizes[randomBuilding][2], mapWidth - 1 - int(math.ceil(buildingSizes[randomBuilding][0])) - buildingSizes[randomBuilding][2])
+    # build up an array keeping track of positions
+    building_locations = []
 
-            if check_valid_location(randomRow,randomColumn,randomBuilding, tileMap) is True:
-                print("Empty plot found! placing building")
-                place_building(randomRow,randomColumn,randomBuilding,tileMap)
-                houses_found += 1
+    # keep track of amount of houses placed, give each a unique id
+    id = 0
+    for chosen_building in reversed(buildingList):
+        attempt = 0
+        id += 1
+        while True:  # selects a random position and check if it's empty.. loops until found empty spot, might be infinite if there's no valid location left
+            randomRow = random.randint(buildingSizes[chosen_building][2],
+                                       mapHeight - 1 - int(math.ceil(buildingSizes[chosen_building][1])) -
+                                       buildingSizes[chosen_building][2])
+            randomColumn = random.randint(buildingSizes[chosen_building][2],
+                                          mapWidth - 1 - int(math.ceil(buildingSizes[chosen_building][0])) -
+                                          buildingSizes[chosen_building][2])
+
+            house_object = [id, chosen_building, randomColumn, randomRow]
+            temp_locations = building_locations + [house_object]
+            valid = True
+            for house in temp_locations:
+                if get_shortest_distance(house, temp_locations) < 0:
+                    valid = False
+                    break
+            if valid:
+                building_locations.append([id, chosen_building, randomColumn, randomRow])
                 break
             else:
                 attempt += 1
-                print("Not empty! Attempt: ", attempt)
-                # to avoid an infinite loop, reset the tileMap and start over at attempt 50000..
+                print attempt
+                # to avoid an infinite loop, reset this function and start over at attempt 50000..
                 if attempt > 50000:
-                    initialize_tilemaps()
-                    error = True
-                    place_random_buildings()
-                    break
-    get_tilemap_score(tileMap)
-    update_game_display()
+                    return place_random_buildings()
 
 
-
-# This function calculates the score based on the margin around and updates the score list
-
-# deep copy the given tileMap and calculate the score
-def get_tilemap_score(map):
-    totalValue, totalScore = 0,0
-
-    global tilemap_required_margins
-    global tilemap_extra_space
-    # reset our global margin tilemaps if we want to update it
-    global scoreList
-    scoreList = []
-    tilemap_required_margins = [[None for w in range(mapWidth)] for h in range(mapHeight)]
-    tilemap_extra_space = [[None for w in range(mapWidth)] for h in range(mapHeight)]
-
-    # This is much faster than copy.deepcopy
-    mapBuffer = [row[:] for row in map]
-
-    while len(scoreList) < houseAmount:
-        for row in range(mapHeight):
-            # loop through each tile in the map
-            for column in range(mapWidth):
-                # skip tiles with the value None
-                if mapBuffer[row][column] is None:
-                    continue
-
-                # otherwise we've found a new building
-                elif mapBuffer[row][column] > water:
-                    foundBuilding = mapBuffer[row][column]
-                    current_margin = 0 # this is used to keep track of the margin that is build up around the house
-                    found = False
-                    # calculate increasingly margin around building in this while loop until hitting another building or end of map
-                    while not found:
-                        current_margin += 1
-                        # For each row in range of the size + x and - x
-                        for marginRow in range(row - current_margin, int(row + current_margin + buildingSizes[foundBuilding][1])):
-                            # End of map was found was found vertically
-                            if marginRow < 0 or marginRow > (mapHeight - 1):
-                                # print("MARGINROW end of map vertical at x=", x)
-                                found = True
-                                break
-                            # end of map was found horizontally
-                            elif column - current_margin < 0 or column + current_margin + buildingSizes[foundBuilding][0] > mapWidth:
-                                # print("MARGINROW end of map horizontal at x=", x)
-                                found = True
-                                break
-                            # Collision with a house found on the left side
-                            elif mapBuffer[marginRow][column - current_margin] not in (grass, grass2):
-                                # print("MARGINROW object found left with x of ", x)
-                                # tileMap[marginRow][column - x] = blue
-                                found = True
-                                break
-                            # Collision with a house found on the right side (could be joined into 1 statement with left)
-                            elif mapBuffer[marginRow][column + current_margin - 1 + buildingSizes[foundBuilding][0]] not in (grass, grass2):
-                                # print("MARGINROW object found right with x of ", x)
-                                # tileMap[marginRow][column + x - 1 + buildingSizes[foundBuilding][0]] = blue
-                                found = True
-                                break
-                            # If the surrounding tiles pass these tests, they are empty..
-                            # Do we want to update the arrays storing margins?
-                            else:
-                                # if the margin is within the required space..
-                                if current_margin <= buildingSizes[foundBuilding][2]:
-                                    tilemap_required_margins[marginRow][column - current_margin] = buildingColors[foundBuilding]
-                                    tilemap_required_margins[marginRow][column + current_margin - 1 + buildingSizes[foundBuilding][0]] = buildingColors[foundBuilding]
-                                else:
-                                    tilemap_extra_space[marginRow][column - current_margin] = grass2
-                                    tilemap_extra_space[marginRow][column + current_margin - 1 + buildingSizes[foundBuilding][0]] = grass2
-                                continue
-
-                        if not found:
-                            # column + 1 and - 1 because this tile was already checked in marginRows
-                            for marginColumn in range(column - current_margin + 1, int(column + current_margin - 1 + buildingSizes[foundBuilding][0])):
-                                if mapBuffer[row - current_margin][marginColumn] not in (grass, grass2):
-                                    # print("MARGINCOLUMN object collision found downwards at (",row - x, marginColumn)
-                                    # tileMap[row - x][marginColumn] = blue
-                                    found = True
-                                    break
-                                elif mapBuffer[row + current_margin - 1 + int(buildingSizes[foundBuilding][1])][marginColumn] not in (grass, grass2):
-                                    # tileMap[row + x - 1 + int(buildingSizes[foundBuilding][1])][marginColumn] = blue
-                                    # print("MARGINCOLUMN object found upwards with x of ", x)
-                                    found = True
-                                    break
-                                else:
-                                    if current_margin <= buildingSizes[foundBuilding][2]:
-                                        tilemap_required_margins[row + current_margin - 1 + int(buildingSizes[foundBuilding][1])][marginColumn] = buildingColors[foundBuilding]
-                                        tilemap_required_margins[row - current_margin][marginColumn] = buildingColors[foundBuilding]
-                                    else:
-                                        tilemap_extra_space[row + current_margin - 1 + int(buildingSizes[foundBuilding][1])][marginColumn] = grass2
-                                        tilemap_extra_space[row - current_margin][marginColumn] = grass2
-                                    continue
-
-                    # (found margin - required margin) / 2 = extra free space in metres
-                    buildingScore = int(math.floor((current_margin - buildingSizes[foundBuilding][2]) / tilesPerMetre))
-                    # If the buildingscore is lower than 0, it means the required space has been violated, return false
-                    if buildingScore < 0:
-                        print "Required margin was overwritten at (" + str(column) + ", " + str(row) + ")"
-                        return False
-
-                    # formula to calculate building value here
-                    totalValue += houseValues[foundBuilding][0] * (1 + (houseValues[foundBuilding][1] * buildingScore))
-
-                    # replace all tiles of the building with none so these will be skipped in the rest of our loop
-                    clear_building(row,column,foundBuilding,mapBuffer,None)
-
-                    textpos = ( column, row )
-                    scoreList.append([foundBuilding,buildingScore,textpos])
-
-    return totalValue
+    return building_locations
 
 
+# this function calculates the score by using house coordinates
+def calculate_score(house_array):
+    id = 0
+    type = 1
+    x = 2
+    y = 3
+    house_score_list = []
+    for house_object in house_array:
 
-# this function displays the tileMap onto the screen
-def update_game_display():
-    # loop through each row
-    for row in range(mapHeight):
-        # loop through each column in the row
-        for column in range(mapWidth):
-            # draw the resource at that position in the tileMap, using the correct image
-            if tileMap[row][column] in textures:
-                texture = pygame.transform.scale(textures[tileMap[row][column]],(tileSize,tileSize))
-                display.blit(texture, (column * tileSize, row * tileSize))
-            # if it's not a texture use a color
-            elif tileMap[row][column] in colors:
-                tile = pygame.Surface((tileSize,tileSize))
-                tile.fill((255,255,255, 100))
-                pygame.draw.rect(tile, colors[tileMap[row][column]], (0, 0, tileSize, tileSize))
-                display.blit(tile,(column * tileSize, row * tileSize))
+        # calculate the shortest distance ( and subtract the required margin and floor to metric meters)
+        house_score = get_shortest_distance(house_object, house_array)
+
+        # hard constrain so the required margin of any house can never be overwritten
+        if house_score < 0:
+            return False, False, False
+        house_score_list.append(house_object[0:4] + [house_score])
+
+    total_extra_free_space = sum([o[4] for o in house_score_list])
+    total_value = int(sum([(1 + o[4] * houseValues[o[type]][1]) * houseValues[o[type]][0] for o in house_score_list]))
+    return house_score_list, total_extra_free_space, total_value
+
+
+def get_shortest_distance(house_object, house_positions):
+    id = 0
+    type = 1
+    x = 2
+    y = 3
+    shortest_distance = None
+    house_corners = [(house_object[x],house_object[y]),(house_object[x] + buildingSizes[house_object[type]][0],house_object[y]),
+                     (house_object[x],house_object[y] + buildingSizes[house_object[type]][1]), (house_object[x] + buildingSizes[house_object[type]][0], house_object[y] + buildingSizes[house_object[type]][1]) ]
+
+    # check if house does not stand in any water!
+    S1,S2 = set(house_corners), set(water_coords)
+    if len(S2.intersection(S1)) > 0:
+        return -99
+
+
+    for house_comparison in [o for o in house_positions if o[id] != house_object[id]]:
+        # Basically we determine in which of the 8 possible directions the comparison house lies.
+        # Directions are: up, left, right, down, up-left, up-right, down-left, down-right
+        # This is important because we need to determine from which corner of the houses we measure the distance
+        # Keep in mind that the UPPER LEFT corner of the map is position (0,0)
+
+        # comparison house is above house_object if house_object's highest Y is beneath house_comparison's lowest Y
+        if house_object[y] > house_comparison[y] + buildingSizes[house_comparison[type]][1]:
+            y_distance = house_object[y] - (house_comparison[y] + buildingSizes[house_comparison[type]][1])
+
+        # comparison house is below house_object if..
+        elif house_object[y] + buildingSizes[house_object[type]][1] < house_comparison[y]:
+            y_distance = house_comparison[y] - (house_object[y] + buildingSizes[house_object[type]][1])
+
+        # otherwise it is horizontally next to house_object, so y = 0 because we only need horizontal distance
+        else:
+            y_distance = 0
+
+        # do the same for the x axis
+        if house_object[x] > house_comparison[x] + buildingSizes[house_comparison[type]][0]:
+            x_distance = house_object[x] - (house_comparison[x] + buildingSizes[house_comparison[type]][0])
+
+        # comparison house is right of house_object if..
+        elif house_object[x] + buildingSizes[house_object[type]][0] < house_comparison[x]:
+            x_distance = house_comparison[x] - (house_object[x] + buildingSizes[house_object[type]][0])
+
+        # otherwise it is vertically next to house_object, measure only the Y distance
+        else:
+            x_distance = 0
+
+        total_distance = math.sqrt(x_distance ** 2 + y_distance ** 2)
+        if total_distance == 0:  # intersection!
+            return -99
+        if shortest_distance is None or total_distance < shortest_distance:
+            shortest_distance = total_distance
+
+    # if the smallest distance to the end of the map is smaller than the smallest distance between any other house..
+    map_distance = min([house_object[y], mapHeight - house_object[y] - buildingSizes[house_object[type]][1],
+                        house_object[x], mapWidth - house_object[x] - buildingSizes[house_object[type]][0]])
+    if not shortest_distance or shortest_distance > map_distance:
+        shortest_distance = map_distance
+    # calculate the score (subtract the required margin and floor to metric meters)
+    house_score = int(math.floor((shortest_distance - buildingSizes[house_object[type]][2]) / tilesPerMetre))
+    return house_score
+
+
+# this function updates the display given a list of house positions and scores
+def update_game_display(house_scores):
+    if not house_scores:
+        house_scores = []
+
+    # display the gridlike background
+    texture = pygame.transform.scale(textures[grass2], (mapWidth * tileSize,mapHeight * tileSize))
+    display.blit(texture, (0,0))
+
+    # draw water if any
+    for x, y,width,height in water_bodies_list:
+        print x,y, width,height
+        water_texture = pygame.transform.scale(textures[water], (tileSize * width, tileSize * height))
+        display.blit(water_texture, (tileSize * x, tileSize * y))
 
     # set up font displaying score and value
-    font = pygame.font.Font("freesansbold.ttf",20)
+    font = pygame.font.Font("freesansbold.ttf", 20)
     totalValue = 0
     totalScore = 0
     # draw a score on the center of each house and add it's value to total value
-    for buildingType, score, position in scoreList:
+    for id, buildingType, x, y, score in house_scores:
+        # draw required margin per house
+        margin_texture = pygame.transform.scale(margin_textures[buildingType], (
+        tileSize * (buildingSizes[buildingType][0] + buildingSizes[buildingType][2] * 2),
+        tileSize * (buildingSizes[buildingType][1] + buildingSizes[buildingType][2] * 2)))
+        display.blit(margin_texture, (
+        (x - buildingSizes[buildingType][2]) * tileSize, (y - buildingSizes[buildingType][2]) * tileSize))
+
+        # draw building
+        texture = pygame.transform.scale(textures[buildingType], (
+        tileSize * buildingSizes[buildingType][0], tileSize * buildingSizes[buildingType][1]))
+        display.blit(texture, (x * tileSize, y * tileSize))
+
+        # draw score and add to total
         scoreText = font.render(str(score), 1, (10, 10, 10))
         totalScore += score
         textpos = scoreText.get_rect()
         centerX = buildingSizes[buildingType][0] / 2 * tileSize - textpos.width / 2
         centerY = buildingSizes[buildingType][1] / 2 * tileSize - textpos.height / 2
-        buildingValue = houseValues[buildingType][0] * (1 + (houseValues[buildingType][1] * score)) # formula to calculate building value here
-        display.blit(scoreText, ((position[0] * tileSize + centerX) , (position[1] * tileSize + centerY)))
+        buildingValue = houseValues[buildingType][0] * (
+        1 + (houseValues[buildingType][1] * score))  # formula to calculate building value here
+        display.blit(scoreText, ((x * tileSize + centerX), (y * tileSize + centerY)))
         totalValue += buildingValue
 
     # Display the total calculated value and the total score (extra free space)
-    totalValueText = font.render("Total value: " + str(totalValue) + "    ", 1, (250,250,250), (0,0,0))
-    totalScoreText = font.render("Total (extra) free space: " + str(totalScore) + "    ", 1, (250,250,250),(0,0,0))
+    totalValueText = font.render("Total value: " + str(totalValue) + "    ", 1, (250, 250, 250), (0, 0, 0))
+    totalScoreText = font.render("Total (extra) free space: " + str(totalScore) + "    ", 1, (250, 250, 250), (0, 0, 0))
     display.blit(totalValueText, (mapWidth * tileSize + 50, (mapHeight * tileSize) / 2 - 50))
     display.blit(totalScoreText, (mapWidth * tileSize + 50, (mapHeight * tileSize) / 2))
     # update the display
     pygame.display.update()
 
 
-def text_objects(msg,font):
-    textSurface = font.render(msg, 1, (255,255,255))
+def text_objects(msg, font):
+    textSurface = font.render(msg, 1, (255, 255, 255))
     textRect = textSurface.get_rect()
     return textSurface, textRect
 
 
-def button(msg,x,y,w,h,ic,ac,action=None):
+def button(msg, x, y, w, h, ic, ac, action=None, params=None):
     mouse = pygame.mouse.get_pos()
     click = pygame.mouse.get_pressed()
-    if x+w > mouse[0] > x and y+h > mouse[1] > y:
-        pygame.draw.rect(display, ac,(x,y,w,h))
+    if x + w > mouse[0] > x and y + h > mouse[1] > y:
+        pygame.draw.rect(display, ac, (x, y, w, h))
         if click[0] == 1 and action != None:
-            action()
+            if params == None:
+                action()
+            else:
+                action(params)
     else:
-        pygame.draw.rect(display, ic,(x,y,w,h))
+        pygame.draw.rect(display, ic, (x, y, w, h))
 
-    smallText = pygame.font.Font("freesansbold.ttf",16)
+    smallText = pygame.font.Font("freesansbold.ttf", 16)
     textSurf, textRect = text_objects(msg, smallText)
-    textRect.center = ( (x+(w/2)), (y+(h/2)) )
+    textRect.center = ((x + (w / 2)), (y + (h / 2)))
     display.blit(textSurf, textRect)
 
-show_margins = False
-def toggle_margin_display():
-    global show_margins
-    show_margins = not show_margins
-    global tilemap_required_margins
-    global tileMap
-    for row in range(mapHeight):
-        for column in range(mapWidth):
-            if show_margins is True and tilemap_required_margins[row][column] != None:
-                tile = pygame.Surface((tileSize,tileSize))
-                tile.fill((255,255,255, 100))
-                pygame.draw.rect(tile, colors[tilemap_required_margins[row][column]], (0, 0, tileSize, tileSize))
-                display.blit(tile,(column * tileSize, row * tileSize))
-            elif tilemap_required_margins[row][column] != None:
-                texture = pygame.transform.scale(textures[tileMap[row][column]],(tileSize,tileSize))
-                display.blit(texture, (column * tileSize, row * tileSize))
+
+house_positions = []
+def place_random_and_update():
+    pr = cProfile.Profile()
+    pr.enable()
+    global house_positions
+    house_positions = place_random_buildings()
+    house_positions, total_score, total_value = calculate_score(house_positions)
+    update_game_display(house_positions)
+    pr.disable()
+    # after your program ends
+    pr.print_stats(sort="calls")
+
+def place_setting1_and_update():
+    pr = cProfile.Profile()
+    pr.enable()
+    global house_positions
+    house_positions = place_close_together()
+    house_positions, total_score, total_value = calculate_score(house_positions)
+    update_game_display(house_positions)
+    pr.disable()
+    # after your program ends
+    pr.print_stats(sort="calls")
 
 
-show_extra_space = False
-def toggle_extra_space_display():
-    global show_extra_space
-    show_extra_space = not show_extra_space
-    global tilemap_extra_space
-    global tileMap
-    for row in range(mapHeight):
-        for column in range(mapWidth):
-            if show_extra_space is True and tilemap_extra_space[row][column] != None:
-                texture = pygame.transform.scale(textures[tilemap_extra_space[row][column]],(tileSize,tileSize))
-                display.blit(texture, (column * tileSize, row * tileSize))
-            elif tilemap_extra_space[row][column] != None:
-                if show_margins is True and tilemap_required_margins[row][column] != None:
-                    tile = pygame.Surface((tileSize,tileSize))
-                    tile.fill((255,255,255, 100))
-                    pygame.draw.rect(tile, colors[tilemap_required_margins[row][column]], (0, 0, tileSize, tileSize))
-                    display.blit(tile,(column * tileSize, row * tileSize))
-                else:
-                    texture = pygame.transform.scale(textures[tileMap[row][column]],(tileSize,tileSize))
-                    display.blit(texture, (column * tileSize, row * tileSize))
 
-place_random_buildings()
+def random_sample():
+    global house_positions
+    with open('randomsample.csv', "wb") as csvfile:
+        writer = csv.writer(csvfile, delimiter=';')
+        writer.writerow(["total_value","total_score", "score_list"])
+        highest_value = 0
+        font = pygame.font.Font("freesansbold.ttf", 16)
+        for i in range(1000):
+            # Display iteration
+            iteration_text = font.render("Writing row: " + str(i) + "               ", 1, (250, 250, 250), (0, 0, 0))
+            display.blit(iteration_text, (mapWidth * tileSize + 50, (mapHeight * tileSize) / 2 - 100))
+            pygame.display.flip()
 
+            scoreList, totalScore, totalValue = calculate_score(place_random_buildings())
+            writer.writerow([totalValue,totalScore,scoreList])
+            if highest_value < totalValue:
+                highest_value = totalValue
+                highest_scoreList = scoreList
+
+    house_positions = highest_scoreList
+    update_game_display(highest_scoreList)
 
 def stop_hillClimbing():
     global climbing
     climbing = False
-
-
 climbing = False
+
+
+# (non-stochastic) hillclimbing calculates every possible step, this value affects performance a lot! (smaller steps is faster, but less result)
+hillClimbing_max_steps = 2
+
+# this function tries to move a house in every possible direction (between 1 and the max_steps), and accepts the highest VALUE
 def start_hillClimbing():
     global climbing
-    global tileMap
-    totalValue = get_tilemap_score(tileMap)
-    totalScore = 0
+    global house_positions
+
+    start_position, total_extra_free_space, total_value = calculate_score(house_positions)
     iteration = 0
     climbing = True
     while climbing is True:
         pygame.event.get()
         iteration += 1
-        # Display iteration
-        font = pygame.font.Font("freesansbold.ttf",16)
-        iteration_text = font.render("Iteration: " + str(iteration) + "               ", 1, (250,250,250), (0,0,0))
-        display.blit(iteration_text, (mapWidth * tileSize + 50, (mapHeight * tileSize) / 2 - 100))
-        print "ITERATION NUMBER: " , iteration
 
-        # deep copy the tilemap as buffer
-        new_tileMap = [row[:] for row in tileMap]
+        # Display iteration
+        font = pygame.font.Font("freesansbold.ttf", 16)
+        iteration_text = font.render("Iteration: " + str(iteration) + "               ", 1, (250, 250, 250), (0, 0, 0))
+        display.blit(iteration_text, (mapWidth * tileSize + 50, (mapHeight * tileSize) / 2 - 100))
+        print "ITERATION NUMBER: ", iteration
 
         # Select a random building from the list..
-        buildingType, score, position = scoreList[random.randint(0,len(scoreList) - 1)]
-        # Clear it in the buffer so we can replace it and recalculate the score
-        for row in range(position[1],position[1] + buildingSizes[buildingType][1]):
-            for column in range(position[0],position[0] + buildingSizes[buildingType][0]):
-                new_tileMap[row][column] = grass
+        id, buildingType, x, y, score = house_positions[random.randint(0, len(house_positions) - 1)]
 
         # implement a chance to swap two houses
-        swap_chance = random.randint(0,10)
+        swap_chance = random.randint(0, 10)
         if swap_chance > 8:
-            print "Trying to swap.."
-            swap_buildingType, swap_score, swap_position = scoreList[random.randint(0,len(scoreList) - 1)]
             # to make sure we're not swapping the same house (type) which would obviously be inefficient
-            while swap_position == position or swap_buildingType == buildingType:
-                swap_buildingType, swap_score, swap_position = scoreList[random.randint(0,len(scoreList) - 1)]
-            clear_building(swap_position[1],swap_position[0],swap_buildingType,new_tileMap,grass)
-            # anchor point (position) is the upper left corner, convert it to center both buildings
+            efficient_swaps = [o for o in house_positions if o[1] != buildingType]
+            print "Trying to swap.."
+            new_value = False
+            for swap_id, swap_buildingType, swap_x, swap_y, swap_score in efficient_swaps:
+
+                # temporary list to re-calculate scores (storing all the positions that will not change)
+                temp_pos_list = [house for house in house_positions if house[0] not in (id, swap_id)]
+
+                # anchor point (position) is the upper left corner of a house, convert it to center both houses on their new spots
+                center_correction_x = int(buildingSizes[buildingType][0] - buildingSizes[swap_buildingType][0]) / 2
+                center_correction_y = int(buildingSizes[buildingType][1] - buildingSizes[swap_buildingType][1]) / 2
+                new_house = [id, buildingType, swap_x + (center_correction_x * -1), swap_y + (center_correction_y * -1)]
+                new_house_comparison = [swap_id, swap_buildingType, x + center_correction_x, y + center_correction_y]
+
+                temp_score_list, temp_score, temp_value = calculate_score(
+                    temp_pos_list + [new_house] + [new_house_comparison])
+                if not new_value or temp_value > new_value:
+                    new_score_list, new_score, new_value = temp_score_list, temp_score, temp_value
+            print "Highest possible swap value: " + str(new_value)
+        # otherwise move in a random direction
+        else:
+            move_range = []  # put every direction in a range (including diagonally)
+            for i in xrange(1, hillClimbing_max_steps + 1):
+                strength_range = [(-i, -i), (+i, -i), (-i, +i), (+i, +i), (0, -i), (-i, 0), (0, +i), (+i, 0)]
+                random.shuffle(strength_range)
+                move_range.append(strength_range)
+
+            possible_values = []
+            for strength in reversed(move_range):
+                for move_direction in strength:
+                    if get_shortest_distance([id, buildingType, x + move_direction[0], y + move_direction[1]],
+                                             house_positions) >= 0:
+                        temp_score_list = [house if house[0] != id else [id, buildingType, x + move_direction[0],
+                                                                         y + move_direction[1]] for house in
+                                           house_positions]
+                        temp_score_list, temp_score, temp_value = calculate_score(temp_score_list)
+                        if temp_score_list:
+                            possible_values.append([temp_score_list, temp_score, temp_value])
+
+            # check if we need to update the highest (or equal) value, based on total price (x[1] = highest free space)
+            if len(possible_values) != 0:
+                new_score_list, new_score, new_value = max(possible_values, key=lambda x: x[2])
+            else:
+                new_score_list = False
+
+        # check if we need to update the highest (or equal) value
+        if new_score_list and new_value >= total_value and new_score_list:  # not in saved_score_lists:
+            house_positions = new_score_list
+            # saved_score_lists.append(new_score_list)
+            total_value = new_value
+            print "Higher or equal value found: " + str(new_value)
+            update_game_display(new_score_list)
+
+        button("STOP", mapWidth * tileSize + 275, 125, 100, 25, (237, 28, 36), (191, 15, 23), stop_hillClimbing)
+        pygame.display.flip()
+
+
+# stochastic hillclimber just generates a random movement and accepts if this improves or equals the original value
+def start_stochastic_hillClimbing():
+    global climbing
+    global house_positions
+
+    start_position, total_extra_free_space, total_value = calculate_score(house_positions)
+
+    iteration = 0
+    climbing = True
+    while climbing is True:
+
+        iteration += 1
+        # Display iteration
+        font = pygame.font.Font("freesansbold.ttf", 16)
+        iteration_text = font.render("Iteration: " + str(iteration) + "               ", 1, (250, 250, 250), (0, 0, 0))
+        display.blit(iteration_text, (mapWidth * tileSize + 50, (mapHeight * tileSize) / 2 - 100))
+        print "ITERATION NUMBER: ", iteration
+
+        # Select a random building from the list..
+        id, buildingType, x, y, score = house_positions[random.randint(0, len(house_positions) - 1)]
+
+        # implement a chance to swap two houses
+        swap_chance = random.randint(0, 10)
+        new_value = False
+        if swap_chance > 8:
+            # to make sure we're not swapping the same house (type) which would obviously be inefficient
+            efficient_swaps = [o for o in house_positions if o[1] != buildingType]
+            print "Trying to swap.."
+            swap_id, swap_buildingType, swap_x, swap_y, swap_score = efficient_swaps[
+                random.randint(0, len(efficient_swaps) - 1)]
+
+            # temporary list to re-calculate scores (storing all the positions that will not change)
+            temp_score_list = [house for house in house_positions if house[0] not in (id, swap_id)]
+
+            # anchor point (position) is the upper left corner of a house, convert it to center both houses on their new spots
             center_correction_x = int(buildingSizes[buildingType][0] - buildingSizes[swap_buildingType][0]) / 2
             center_correction_y = int(buildingSizes[buildingType][1] - buildingSizes[swap_buildingType][1]) / 2
-            place_building(swap_position[1] + (center_correction_x * -1), swap_position[0] + (center_correction_y * -1), buildingType, new_tileMap)
-            place_building(position[1] + center_correction_x, position[0] + center_correction_y, swap_buildingType, new_tileMap)
+            new_house = [id, buildingType, swap_x + (center_correction_x * -1), swap_y + (center_correction_y * -1)]
+            new_house_comparison = [swap_id, swap_buildingType, x + center_correction_x, y + center_correction_y]
+
+
+            temp_score_list, temp_score, temp_value = calculate_score(
+                temp_score_list + [new_house] + [new_house_comparison])
+            if not new_value or temp_value > new_value:
+                new_score_list, new_score, new_value = temp_score_list, temp_score, temp_value
 
         # otherwise move in a random direction
         else:
-            # try a random direction for, either vertical or horizontal (not diagonal, would be inefficient)
-            if random.randint(0,1) == 0:
-                move_direction = (0,random.randint(-2,2))
-            else:
-                move_direction = (random.randint(-2,2),0)
-            # to avoid list out of range check the position first
-            if position[1] + buildingSizes[buildingType][0] + move_direction[1] < mapWidth and position[0] + buildingSizes[buildingType][1] + move_direction[0] < mapHeight:
-                place_building(position[1] + move_direction[1], position[0] + move_direction[0],buildingType,new_tileMap)
-            else:
-                print "Went out of map at", position
-                place_building(position[1], position[0], buildingType, new_tileMap)
+            # generate a random direction
+            move_direction = (random.randint(-hillClimbing_max_steps, hillClimbing_max_steps),
+                              random.randint(-hillClimbing_max_steps, hillClimbing_max_steps))
+            while move_direction == (0, 0):
+                move_direction = (random.randint(-hillClimbing_max_steps, hillClimbing_max_steps),
+                                  random.randint(-hillClimbing_max_steps, hillClimbing_max_steps))
 
-        new_value = get_tilemap_score(new_tileMap)
-        # check if this is a valid position and it is higher or equal to current value
-        if new_value and new_value >= totalValue:
-                totalValue = new_value
-                print "Higher value found: " + str(new_value)
-                tileMap = new_tileMap
-                update_game_display()
+            temp_score_list = [
+                house if house[0] != id else [id, buildingType, x + move_direction[0], y + move_direction[1]] for house
+                in house_positions]
+            new_score_list, new_score, new_value = calculate_score(temp_score_list)
 
+        # check if we need to update the highest (or equal) value
+        if new_score_list and new_value >= total_value:
+            house_positions = new_score_list
+            total_value = new_value
+            print "Higher or equal value found: " + str(new_value)
+            update_game_display(new_score_list)
+
+        button("STOP", mapWidth * tileSize + 275, 125, 100, 25, (237, 28, 36), (191, 15, 23), stop_hillClimbing)
+        pygame.event.get()
+
+# Simulated Annealing, pretty much a copy of hillclimbing apart from a chance to accept lower values.. (write as one function?)
+def start_simulated_annealing():
+    global climbing
+    global house_positions
+
+    start_position, total_extra_free_space, total_value = calculate_score(house_positions)
+    highest_position,highest_extra_free_space, highest_value = start_position, total_extra_free_space, total_value
+    iteration = 0
+    # initial temperature for Boltzman distribution
+    temp = total_value / 10 / houseAmount
+    climbing = True
+    while climbing is True:
+        pygame.event.get()
+        iteration += 1
+
+
+        # Select a random building from the list..
+        id, buildingType, x, y, score = house_positions[random.randint(0, len(house_positions) - 1)]
+
+        # implement a chance to swap two houses
+        swap_chance = random.randint(0, 10)
+        if swap_chance > 8:
+            # to make sure we're not swapping the same house (type) which would obviously be inefficient
+            efficient_swaps = [o for o in house_positions if o[1] != buildingType]
+            print "Trying to swap.."
+            swap_id, swap_buildingType, swap_x, swap_y, swap_score = efficient_swaps[
+                random.randint(0, len(efficient_swaps) - 1)]
+
+            # temporary list to re-calculate scores (storing all the positions that will not change)
+            temp_score_list = [house for house in house_positions if house[0] not in (id, swap_id)]
+
+            # anchor point (position) is the upper left corner of a house, convert it to center both houses on their new spots
+            center_correction_x = int(buildingSizes[buildingType][0] - buildingSizes[swap_buildingType][0]) / 2
+            center_correction_y = int(buildingSizes[buildingType][1] - buildingSizes[swap_buildingType][1]) / 2
+            new_house = [id, buildingType, swap_x + (center_correction_x * -1), swap_y + (center_correction_y * -1)]
+            new_house_comparison = [swap_id, swap_buildingType, x + center_correction_x, y + center_correction_y]
+
+            new_score_list, new_score, new_value = calculate_score(
+                temp_score_list + [new_house] + [new_house_comparison])
+
+        # otherwise move in a random direction
         else:
-            get_tilemap_score(tileMap)
-        button("STOP",mapWidth * tileSize + 275, 25 ,100,100,(237,28,36),(191,15,23),stop_hillClimbing)
+            # generate a random direction
+            move_direction = (random.randint(-hillClimbing_max_steps, hillClimbing_max_steps),
+                              random.randint(-hillClimbing_max_steps, hillClimbing_max_steps))
+            while move_direction == (0, 0):
+                move_direction = (random.randint(-hillClimbing_max_steps, hillClimbing_max_steps),
+                                  random.randint(-hillClimbing_max_steps, hillClimbing_max_steps))
+
+            temp_score_list = [house if house[0] != id else [id, buildingType, x + move_direction[0], y + move_direction[1]] for house in house_positions]
+            new_score_list, new_score, new_value = calculate_score(temp_score_list)
+
+        # check if we need to update the highest (or equal) value
+        if new_score_list and new_value >= total_value:
+            house_positions = new_score_list
+            total_value = new_value
+            print "Higher or equal value found: " + str(new_value)
+            highest_position, highest_extra_free_space, highest_value = new_score_list, new_score, new_value
+            update_game_display(new_score_list)
+
+        # also a chance to accept lower values..
+        elif new_score_list:
+            temp *= 0.9999
+            # TODO Create a good acceptance chance formula based on difference between scores and iteration number
+            acceptance_chance = math.exp(-(total_value - new_value) / temp) / 2
+            probability = random.random()
+            print probability, acceptance_chance, total_value - new_value
+            if probability < acceptance_chance:
+                house_positions = new_score_list
+                total_value = new_value
+                print "Accepting lower value..: " + str(new_value)
+                update_game_display(new_score_list)
+        # Display iteration
+        font = pygame.font.Font("freesansbold.ttf", 16)
+        iteration_text = font.render("Iteration: " + str(iteration) + "  Temp:" + str(temp) + "              ", 1, (250, 250, 250), (0, 0, 0))
+        display.blit(iteration_text, (mapWidth * tileSize + 50, (mapHeight * tileSize) / 2 - 100))
+        print "ITERATION NUMBER: ", iteration
+        button("STOP", mapWidth * tileSize + 275, 125, 100, 25, (237, 28, 36), (191, 15, 23), stop_hillClimbing)
+        pygame.display.flip()
+
+def setHouseAmount(amount):
+    global houseAmount
+    houseAmount = amount
+    global buildingList
+    # keep track of positions of building
+    buildingList = [largeHouse] * int(houseAmount * 0.15) + [mediumHouse] * int(houseAmount * 0.25) + [smallHouse] * int(
+    houseAmount * 0.6)
+
+    place_setting1_and_update()
 
 
+water_bodies_list, water_coords = place_water()
+print water_coords
+# draws the map without houses
+update_game_display(False)
 
 running = True
 clock = pygame.time.Clock()
@@ -393,24 +575,30 @@ while running:
             # and the game and close the window
             pygame.quit()
             sys.exit()
-        # elif event.type == pygame.MOUSEBUTTONDOWN:
-        #     # User clicks the mouse. Get the position
-        #     pos = pygame.mouse.get_pos()
-        #     # Change the x/y screen coordinates to grid coordinates
-        #     column = pos[0] // (tileSize)
-        #     row = pos[1] // (tileSize)
-        #     print(row,column)
-        #     # if the click was inside the displayed tilemap
-        #     if column < mapWidth:
-        #         if tileMap[row][column] > grass:
-        #             clickedBuilding = tileMap[row][column]
-        #             pickup_building(clickedBuilding,column,row)
-        #             update_game_display()
-    button("Reset",mapWidth * tileSize + 25, 25 ,100,25,(123,123,123),(50,50,50),place_random_buildings)
-    button("Margins",mapWidth * tileSize + 150, 25 ,100,25,(123,123,123),(50,50,50),toggle_margin_display)
-    button("Extra space",mapWidth * tileSize + 150, 75 ,100,25,(123,123,123),(50,50,50),toggle_extra_space_display)
-    button("Hillclimbing",mapWidth * tileSize + 275, 25 ,100,25,(123,123,123),(50,50,50),start_hillClimbing)
 
-    # Limit to 60 fps
-    clock.tick(60)
+    button("Random", mapWidth * tileSize + 25, 25, 100, 25, colors["lightgrey"], colors["darkgrey"], place_random_and_update)
+    button("R. Sample", mapWidth * tileSize + 25, 75, 100, 25, colors["lightgrey"], colors["darkgrey"], random_sample)
+    button("Setting 1", mapWidth * tileSize + 25, 125, 100, 25, colors["lightgrey"], colors["darkgrey"], place_setting1_and_update)
+    # button("Margins", mapWidth * tileSize + 150, 25, 100, 25, colors["lightgrey"], colors["darkgrey"], toggle_margin_display)
+
+    # hide these buttons if map is empty
+    if len(house_positions) > 0:
+        button("Sim Anneal", mapWidth * tileSize + 150, 25, 100, 25, colors["lightgrey"], colors["darkgrey"], start_simulated_annealing)
+        button("Hillclimbing", mapWidth * tileSize + 275, 25, 100, 25, colors["lightgrey"], colors["darkgrey"], start_hillClimbing)
+        button("Stoch. Hill", mapWidth * tileSize + 275, 75, 100, 25, colors["lightgrey"], colors["darkgrey"], start_stochastic_hillClimbing)
+
+    # Buttons to adjust amount of houses
+    if houseAmount == 20:
+        button("20", mapWidth * tileSize + 25, mapHeight * tileSize - 25, 100, 25, colors["green"], colors["green"])
+        button("40", mapWidth * tileSize + 150, mapHeight * tileSize - 25, 100, 25, colors["lightgrey"], colors["darkgrey"],setHouseAmount,40)
+        button("60", mapWidth * tileSize + 275, mapHeight * tileSize - 25, 100, 25, colors["lightgrey"], colors["darkgrey"],setHouseAmount,60)
+    elif houseAmount == 40:
+        button("20", mapWidth * tileSize + 25, mapHeight * tileSize - 25, 100, 25, colors["lightgrey"], colors["darkgrey"],setHouseAmount,20)
+        button("40", mapWidth * tileSize + 150, mapHeight * tileSize - 25, 100, 25, colors["green"], colors["green"])
+        button("60", mapWidth * tileSize + 275, mapHeight * tileSize - 25, 100, 25, colors["lightgrey"], colors["darkgrey"],setHouseAmount,60)
+    elif houseAmount == 60:
+        button("20", mapWidth * tileSize + 25, mapHeight * tileSize - 25, 100, 25, colors["lightgrey"], colors["darkgrey"],setHouseAmount,20)
+        button("40", mapWidth * tileSize + 150, mapHeight * tileSize - 25, 100, 25, colors["lightgrey"], colors["darkgrey"],setHouseAmount,40)
+        button("60", mapWidth * tileSize + 275, mapHeight * tileSize - 25, 100, 25, colors["green"], colors["green"])
     pygame.display.update()
+
