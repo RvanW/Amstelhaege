@@ -1,5 +1,6 @@
 import pygame
 
+
 # Dimensions
 tilesPerMetre = 2  # So 1 tiles equals 0,5m.. should add a visible scale at some point
 tileSize = 2
@@ -56,6 +57,7 @@ margin_textures = {
 # colors
 colors = {
     "blue": (0, 0, 255),
+    "darkblue": (0, 0, 175),
     "red": (180, 28, 36),
     "orange": (234, 94, 0),
     "yellow": (200, 222, 0),
