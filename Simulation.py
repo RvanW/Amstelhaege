@@ -261,7 +261,7 @@ climbing = False
 
 
 # (non-stochastic) hillclimbing calculates every possible step, this value affects performance a lot! (smaller steps is faster, but less result)
-hillClimbing_max_steps = 25
+hillClimbing_max_steps = 5
 
 # this function tries to move a house in every possible direction (between 1 and the max_steps), and accepts the highest VALUE
 def start_hillClimbing():
