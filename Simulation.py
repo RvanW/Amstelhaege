@@ -665,7 +665,7 @@ def reset_water_random():
 
 def place_water_1():
     global water_bodies_list
-    water_bodies_list = [[61,0,110,128,50],[62,192,110,128,50],[63,135,172,50,128]]
+    water_bodies_list = [[61, 80, 45, 160, 40], [62, 80, 130, 160, 40], [63, 80, 215, 160, 40]]
     place_setting1_and_update()
 
 
