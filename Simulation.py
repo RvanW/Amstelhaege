@@ -353,84 +353,90 @@ def start_stochastic_hillClimbing(generate_sample = True):
 
     start_position, total_extra_free_space, total_value = calculate_score(house_positions)
 
+    # export data if needed
+    file_date = datetime.datetime.now().strftime(r"%H;%M;%S %d-%m-%y")
+    file_name = "stoch hill " + file_date + ".csv"
+    with open(file_name, "wb") as csvfile:
+        writer = csv.writer(csvfile, delimiter=';')
+        writer.writerow(["iteration","total_value","total_score", "score_list","water_list"])
+        iteration = 0
+        climbing = True
+        while climbing is True:
 
-    iteration = 0
-    climbing = True
-    while climbing is True:
+            iteration += 1
+            # Display iteration
+            font = pygame.font.Font("freesansbold.ttf", 16)
+            iteration_text = font.render("Iteration: " + str(iteration) + "               ", 1, (250, 250, 250), (0, 0, 0))
+            display.blit(iteration_text, (mapWidth * tileSize + 50, (mapHeight * tileSize) / 2 - 50))
+            print "ITERATION NUMBER: ", iteration
 
-        iteration += 1
-        # Display iteration
-        font = pygame.font.Font("freesansbold.ttf", 16)
-        iteration_text = font.render("Iteration: " + str(iteration) + "               ", 1, (250, 250, 250), (0, 0, 0))
-        display.blit(iteration_text, (mapWidth * tileSize + 50, (mapHeight * tileSize) / 2 - 50))
-        print "ITERATION NUMBER: ", iteration
+            # Select a random building from the list..
+            id, buildingType, x, y, score = house_positions[random.randint(0, len(house_positions) - 1)]
 
-        # Select a random building from the list..
-        id, buildingType, x, y, score = house_positions[random.randint(0, len(house_positions) - 1)]
+            # implement a chance to swap two houses
+            new_value = False
+            if random.random() < 0.2:
+                # to make sure we're not swapping the same house (type) which would obviously be inefficient
+                efficient_swaps = [o for o in house_positions if o[1] != buildingType]
+                print "Trying to swap.."
+                swap_id, swap_buildingType, swap_x, swap_y, swap_score = efficient_swaps[
+                    random.randint(0, len(efficient_swaps) - 1)]
 
-        # implement a chance to swap two houses
-        new_value = False
-        if random.random() < 0.2:
-            # to make sure we're not swapping the same house (type) which would obviously be inefficient
-            efficient_swaps = [o for o in house_positions if o[1] != buildingType]
-            print "Trying to swap.."
-            swap_id, swap_buildingType, swap_x, swap_y, swap_score = efficient_swaps[
-                random.randint(0, len(efficient_swaps) - 1)]
+                # temporary list to re-calculate scores (storing all the positions that will not change)
+                temp_score_list = [house for house in house_positions if house[0] not in (id, swap_id)]
 
-            # temporary list to re-calculate scores (storing all the positions that will not change)
-            temp_score_list = [house for house in house_positions if house[0] not in (id, swap_id)]
-
-            # anchor point (position) is the upper left corner of a house, convert it to center both houses on their new spots
-            center_correction_x = int(buildingSizes[buildingType][0] - buildingSizes[swap_buildingType][0]) / 2
-            center_correction_y = int(buildingSizes[buildingType][1] - buildingSizes[swap_buildingType][1]) / 2
-            new_house = [id, buildingType, swap_x + (center_correction_x * -1), swap_y + (center_correction_y * -1)]
-            new_house_comparison = [swap_id, swap_buildingType, x + center_correction_x, y + center_correction_y]
+                # anchor point (position) is the upper left corner of a house, convert it to center both houses on their new spots
+                center_correction_x = int(buildingSizes[buildingType][0] - buildingSizes[swap_buildingType][0]) / 2
+                center_correction_y = int(buildingSizes[buildingType][1] - buildingSizes[swap_buildingType][1]) / 2
+                new_house = [id, buildingType, swap_x + (center_correction_x * -1), swap_y + (center_correction_y * -1)]
+                new_house_comparison = [swap_id, swap_buildingType, x + center_correction_x, y + center_correction_y]
 
 
-            temp_score_list, temp_score, temp_value = calculate_score(
-                temp_score_list + [new_house] + [new_house_comparison])
-            if not new_value or temp_value > new_value:
-                new_score_list, new_score, new_value = temp_score_list, temp_score, temp_value
+                temp_score_list, temp_score, temp_value = calculate_score(
+                    temp_score_list + [new_house] + [new_house_comparison])
+                if not new_value or temp_value > new_value:
+                    new_score_list, new_score, new_value = temp_score_list, temp_score, temp_value
 
-        # otherwise move in a random direction
-        else:
-            # generate a random direction (8 possible directions with equal chance)
-            move_magnitude = random.randint(1,hillClimbing_max_steps)
-            d = 1/8.0
-            rand_d = random.random()
+            # otherwise move in a random direction
+            else:
+                # generate a random direction (8 possible directions with equal chance)
+                move_magnitude = random.randint(1,hillClimbing_max_steps)
+                d = 1/8.0
+                rand_d = random.random()
 
-            if rand_d < d: # direction is up
-                move_direction = (0,-move_magnitude)
-            elif rand_d < d * 2: # up right
-                move_direction = (move_magnitude,-move_magnitude)
-            elif rand_d < d * 3: # right
-                move_direction = (move_magnitude,0)
-            elif rand_d < d * 4: # down right
-                move_direction = (move_magnitude,move_magnitude)
-            elif rand_d < d * 5: # down
-                move_direction = (0,move_magnitude)
-            elif rand_d < d * 6: # down left
-                move_direction = (-move_magnitude,move_magnitude)
-            elif rand_d < d * 7: # left
-                move_direction = (-move_magnitude,0)
-            elif rand_d <= d * 8: # up left
-                move_direction = (-move_magnitude,-move_magnitude)
+                if rand_d < d: # direction is up
+                    move_direction = (0,-move_magnitude)
+                elif rand_d < d * 2: # up right
+                    move_direction = (move_magnitude,-move_magnitude)
+                elif rand_d < d * 3: # right
+                    move_direction = (move_magnitude,0)
+                elif rand_d < d * 4: # down right
+                    move_direction = (move_magnitude,move_magnitude)
+                elif rand_d < d * 5: # down
+                    move_direction = (0,move_magnitude)
+                elif rand_d < d * 6: # down left
+                    move_direction = (-move_magnitude,move_magnitude)
+                elif rand_d < d * 7: # left
+                    move_direction = (-move_magnitude,0)
+                elif rand_d <= d * 8: # up left
+                    move_direction = (-move_magnitude,-move_magnitude)
 
-            temp_score_list = [
-                house if house[0] != id else [id, buildingType, x + move_direction[0], y + move_direction[1]] for house
-                in house_positions]
-            new_score_list, new_score, new_value = calculate_score(temp_score_list)
+                temp_score_list = [
+                    house if house[0] != id else [id, buildingType, x + move_direction[0], y + move_direction[1]] for house
+                    in house_positions]
+                new_score_list, new_score, new_value = calculate_score(temp_score_list)
 
-        # check if we need to update the highest (or equal) value
-        if new_score_list and new_value >= total_value:
-            house_positions = new_score_list
-            total_value = new_value
-            print "Higher or equal value found: " + str(new_value)
-            update_game_display(new_score_list)
+            # check if we need to update the highest (or equal) value
+            if new_score_list and new_value >= total_value:
+                house_positions = new_score_list
+                total_value = new_value
+                total_extra_free_space = new_score
+                print "Higher or equal value found: " + str(new_value)
+                update_game_display(new_score_list)
 
-        button("STOP", mapWidth * tileSize + 275, 175, 100, 25, (237, 28, 36), (191, 15, 23), stop_hillClimbing)
-
-        pygame.event.get()
+            button("STOP", mapWidth * tileSize + 275, 175, 100, 25, (237, 28, 36), (191, 15, 23), stop_hillClimbing)
+            writer.writerow([iteration,total_value,total_extra_free_space, house_positions, water_bodies_list])
+            pygame.event.get()
 
 
 # Simulated Annealing, pretty much a copy of hillclimbing apart from a chance to accept lower values..
@@ -651,7 +657,7 @@ def place_water_1():
 def random_sample(function = place_houses_grid):
     global house_positions
     file_date = datetime.datetime.now().strftime(r"%H;%M;%S %d-%m-%y")
-    file_name = "randomsample "+file_date
+    file_name = "randomsample "+file_date + ".csv"
     with open(file_name, "wb") as csvfile:
         writer = csv.writer(csvfile, delimiter=';')
         writer.writerow(["total_value","total_score", "score_list","water_list"])
@@ -668,7 +674,7 @@ def random_sample(function = place_houses_grid):
             if highest_value < totalValue:
                 highest_value = totalValue
                 highest_scoreList = scoreList
-
+            pygame.event.get()
     house_positions = highest_scoreList
     update_game_display(highest_scoreList)
     pygame.image.save(display, "screenshot "+ file_date +".jpeg")
