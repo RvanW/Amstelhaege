@@ -12,12 +12,12 @@ import cProfile
 # Buildings total, is not constant
 houseAmount = 20
 
-# keep track of positions of building
+# build up array according to ratio's and house amount (20,40,60)
 buildingList = [largeHouse] * int(houseAmount * 0.15) + [mediumHouse] * int(houseAmount * 0.25) + [smallHouse] * int(
     houseAmount * 0.6)
 
 
-def place_water():
+def place_water_random():
     # random water bodies..
     amount_of_bodies = random.randint(1,4)
     single_body_square = mapWidth * mapHeight * 0.2 / amount_of_bodies
@@ -107,7 +107,7 @@ def check_if_in_water(target,water_list):
     return False
 
 
-# A different way of placing houses, picking a random place in a grid-like range
+# A different way of placing houses, picking a random place in a grid-like range, works much faster
 def place_houses_grid():
     building_locations = []
     id = 0
@@ -253,15 +253,15 @@ def get_shortest_distance(house_object, house_positions):
     return house_score
 
 
-# Stops any form of iterative algorithms here
-def stop_hillClimbing():
+# Stops any form of iterative algorithms
+def stop_algorithm():
     global climbing
     climbing = False
 climbing = False
 
 
 # (non-stochastic) hillclimbing calculates every possible step, this value affects performance a lot! (smaller steps is faster, but less result)
-hillClimbing_max_steps = 2
+hillClimbing_max_steps = 25
 
 # this function tries to move a house in every possible direction (between 1 and the max_steps), and accepts the highest VALUE
 def start_hillClimbing():
@@ -348,7 +348,7 @@ def start_hillClimbing():
                 print "Higher or equal value found: " + str(new_value)
                 update_game_display(new_score_list)
 
-            button("STOP", mapWidth * tileSize + 275, 175, 100, 25, (237, 28, 36), (191, 15, 23), stop_hillClimbing)
+            button("STOP", mapWidth * tileSize + 275, 175, 100, 25, (237, 28, 36), (191, 15, 23), stop_algorithm)
             writer.writerow([iteration,total_value,total_extra_free_space, house_positions, water_bodies_list])
             pygame.display.flip()
 
@@ -442,8 +442,9 @@ def start_stochastic_hillClimbing(generate_sample = True):
                 print "Higher or equal value found: " + str(new_value)
                 update_game_display(new_score_list)
 
-            button("STOP", mapWidth * tileSize + 275, 175, 100, 25, (237, 28, 36), (191, 15, 23), stop_hillClimbing)
+            button("STOP", mapWidth * tileSize + 275, 175, 100, 25, (237, 28, 36), (191, 15, 23), stop_algorithm)
             writer.writerow([iteration,total_value,total_extra_free_space, house_positions, water_bodies_list])
+            pygame.display.flip()
             pygame.event.get()
 
 
@@ -524,8 +525,10 @@ def start_simulated_annealing():
             if new_score_list and new_value >= total_value:
                 house_positions = new_score_list
                 total_value = new_value
+                total_extra_free_space = new_score
                 print "Higher or equal value found: " + str(new_value)
                 highest_position, highest_extra_free_space, highest_value = new_score_list, new_score, new_value
+
                 update_game_display(new_score_list)
 
             # also a chance to accept lower values..
@@ -538,6 +541,7 @@ def start_simulated_annealing():
                 if probability < acceptance_chance:
                     house_positions = new_score_list
                     total_value = new_value
+                    total_extra_free_space = new_score
                     print "Accepting lower value..: " + str(new_value)
                     update_game_display(new_score_list)
             # Display iteration
@@ -546,7 +550,7 @@ def start_simulated_annealing():
             display.blit(iteration_text, (mapWidth * tileSize + 50, (mapHeight * tileSize) / 2 - 50))
             writer.writerow([iteration,total_value,total_extra_free_space, house_positions, water_bodies_list])
 
-            button("STOP", mapWidth * tileSize + 275, 175, 100, 25, (237, 28, 36), (191, 15, 23), stop_hillClimbing)
+            button("STOP", mapWidth * tileSize + 275, 175, 100, 25, (237, 28, 36), (191, 15, 23), stop_algorithm)
             pygame.display.flip()
 
 
@@ -632,7 +636,6 @@ def button(msg, x, y, w, h, ic, ac, action=None, params=None):
     display.blit(textSurf, textRect)
 
 
-house_positions = []
 def place_random_and_update():
     pr = cProfile.Profile()
     pr.enable()
@@ -659,7 +662,7 @@ def place_setting1_and_update():
 
 def reset_water_random():
     global water_bodies_list
-    water_bodies_list = place_water()
+    water_bodies_list = place_water_random()
     place_setting1_and_update()
 
 
@@ -695,8 +698,6 @@ def random_sample(function = place_houses_grid):
     update_game_display(highest_scoreList)
     pygame.image.save(display, "screenshot "+ file_date +".jpeg")
 
-
-
 def setHouseAmount(amount):
     global houseAmount
     houseAmount = amount
@@ -708,9 +709,9 @@ def setHouseAmount(amount):
     place_setting1_and_update()
 
 
-water_bodies_list = place_water()
-# draws the map without houses
-update_game_display(False)
+water_bodies_list = place_water_random()
+house_positions, total_value, total_score = calculate_score(place_houses_grid())
+update_game_display(house_positions)
 
 
 # The main "game" loop of pygame, running until program exits
