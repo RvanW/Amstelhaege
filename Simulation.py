@@ -353,13 +353,7 @@ def start_stochastic_hillClimbing(generate_sample = True):
 
     start_position, total_extra_free_space, total_value = calculate_score(house_positions)
 
-    # export data if needed
-    file_date = datetime.datetime.now().strftime(r"%H;%M;%S %d-%m-%y")
-    file_name = "stoch hill "+file_date
-    if generate_sample:
-        with open(file_name, "wb") as csvfile:
-            writer = csv.writer(csvfile, delimiter=';')
-            writer.writerow(["total_value","total_score", "score_list","water_list"])
+
     iteration = 0
     climbing = True
     while climbing is True:
