@@ -2,18 +2,17 @@ import pygame
 
 
 # Dimensions
-tilesPerMetre = 2  # So 1 tiles equals 0,5m.. should add a visible scale at some point
+tilesPerMetre = 2  # So 1 tile equals 0,5m.. because buildings can be 10,5m
 tileSize = 2
 mapHeight = 150 * tilesPerMetre
 mapWidth = 160 * tilesPerMetre
-margin = 400  # set in amount of pixels so we can add menu here later
+margin = 400  # set in amount of pixels so we can add menu here
 
 # set up the display
 pygame.init()
 display = pygame.display.set_mode((mapWidth * tileSize + margin, mapHeight * tileSize))
 
 # Constants representing the different tiles
-grass2 = -1
 grass = 0
 water = 1
 smallHouse = 2
@@ -39,18 +38,17 @@ houseValues = {
 
 # a dictionary linking resources to textures
 textures = {
-    grass: pygame.image.load('grass2.png'),
-    grass2: pygame.image.load('grass2.png'),
-    water: pygame.image.load('water.png'),
-    smallHouse: pygame.image.load('smallhouse.png'),
-    mediumHouse: pygame.image.load('mediumhouse.png'),
-    largeHouse: pygame.image.load('largehouse.png')
+    grass: pygame.image.load('Textures/grass_grid.png'),
+    water: pygame.image.load('Textures/water.png'),
+    smallHouse: pygame.image.load('Textures/smallhouse.png'),
+    mediumHouse: pygame.image.load('Textures/mediumhouse.png'),
+    largeHouse: pygame.image.load('Textures/largehouse.png')
 }
 
 margin_textures = {
-    smallHouse: pygame.image.load('smallmargin.png'),
-    mediumHouse: pygame.image.load('mediummargin.png'),
-    largeHouse: pygame.image.load('largemargin.png')
+    smallHouse: pygame.image.load('Textures/smallmargin.png'),
+    mediumHouse: pygame.image.load('Textures/mediummargin.png'),
+    largeHouse: pygame.image.load('Textures/largemargin.png')
 }
 
 

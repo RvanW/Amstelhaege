@@ -5,15 +5,15 @@ import datetime
 from Constants import *
 from pygame.locals import QUIT
 import csv
-import cProfile
 
-# The amount of houses can be adjusted in the simulation, so should not be constant
+# The amount of houses can be adjusted in the simulation, so should not be constant, but default 20
 houseAmount = 20
 
 # build up array according to ratio's and house amount (20,40,60)
 buildingList = [largeHouse] * int(houseAmount * 0.15) + [mediumHouse] * int(houseAmount * 0.25) + [smallHouse] * int(
     houseAmount * 0.6)
 
+### SIMULATION MECHANICS ###
 
 # Places the required water randomly in strokes of 1/4 width-height ratio
 def place_water_random():
@@ -56,7 +56,7 @@ def place_water_random():
     return water_bodies
 
 
-# returns True if target (house or water) intersects with any other water
+# returns True if target (house or water) intersects with any water
 def check_if_in_water(target,water_list):
     # list indexes for water bodies
     id = 0
@@ -113,51 +113,14 @@ def check_if_in_water(target,water_list):
             return True
     return False
 
-
-# add all required buildings to the array at random valid locations, seems very inefficient at 60 houses
-def place_houses_random():
-    # build up an array keeping track of positions
-    building_locations = []
-
-    # keep track of amount of houses placed, give each a unique id
-    id = 0
-    for chosen_building in reversed(buildingList):
-        attempt = 0
-        id += 1
-        while True:  # selects a random position and check if it's empty.. loops until found empty spot, might be infinite if there's no valid location left
-            randomRow = random.randint(buildingSizes[chosen_building][2],
-                                       mapHeight - 1 - int(math.ceil(buildingSizes[chosen_building][1])) -
-                                       buildingSizes[chosen_building][2])
-            randomColumn = random.randint(buildingSizes[chosen_building][2],
-                                          mapWidth - 1 - int(math.ceil(buildingSizes[chosen_building][0])) -
-                                          buildingSizes[chosen_building][2])
-
-            house_object = [id, chosen_building, randomColumn, randomRow]
-            temp_locations = building_locations + [house_object]
-            valid = True
-            for house in temp_locations:
-                if get_shortest_distance(house, temp_locations) < 0:
-                    valid = False
-                    break
-            if valid:
-                building_locations.append([id, chosen_building, randomColumn, randomRow])
-                break
-            else:
-                attempt += 1
-                print attempt
-                # to avoid an infinite loop, reset this function and start over at attempt 50000..
-                if attempt > 50000:
-                    return place_houses_random()
-
-    return building_locations
-
-# A different way of placing houses, picking a random place in a grid-like range, works much faster
+# Puts houses in a random place of a grid-like x,y range, works much faster than just any random row/column
 def place_houses_grid():
     building_locations = []
     id = 0
     tiles_apart = 5
-
+    # Make a list of positions in a grid-like fashion
     grid = [(x,y) for y in range(tiles_apart/2,mapHeight,tiles_apart) for x in range(tiles_apart/2,mapWidth,tiles_apart)]
+    # shuffle it so we can pop random positions
     random.shuffle(grid)
     for house in buildingList:
         id += 1
@@ -174,7 +137,7 @@ def place_houses_grid():
                 building_locations.append([id, house, x, y])
                 break
         else:
-            print "ERROR PLACING BUILDING!!"
+            print "No position left to place building!"
 
     return building_locations
 
@@ -258,15 +221,19 @@ def get_shortest_distance(house_object, house_positions):
     return house_score
 
 
+### ALGORITHMS ###
+
 # Stops any form of iterative algorithms
 def stop_algorithm():
     global climbing
     climbing = False
 climbing = False
 
+# (non-stochastic) hillclimbing calculates every possible step, this value affects performance a lot!
+# smaller max steps is faster, but less increase in result per iteration
+# Test results of various max_steps values can be found in our report
+max_steps = 5
 
-# (non-stochastic) hillclimbing calculates every possible step, this value affects performance a lot! (smaller steps is faster, but less result)
-hillClimbing_max_steps = 5
 
 # this function tries to move a house in every possible direction (between 1 and the max_steps), and accepts the highest VALUE
 def start_hillClimbing():
@@ -322,7 +289,7 @@ def start_hillClimbing():
             # otherwise move in a random direction
             else:
                 move_range = []  # put every direction in a range (including diagonally)
-                for i in xrange(1, hillClimbing_max_steps + 1):
+                for i in xrange(1, max_steps + 1):
                     strength_range = [(-i, -i), (+i, -i), (-i, +i), (+i, +i), (0, -i), (-i, 0), (0, +i), (+i, 0)]
                     random.shuffle(strength_range)
                     move_range.append(strength_range)
@@ -375,7 +342,6 @@ def start_stochastic_hillClimbing(favor_free_space = False):
         iteration = 0
         climbing = True
         while climbing is True:
-
             iteration += 1
             # Display iteration
             font = pygame.font.Font("freesansbold.ttf", 16)
@@ -392,6 +358,8 @@ def start_stochastic_hillClimbing(favor_free_space = False):
                 # to make sure we're not swapping the same house (type) which would obviously be inefficient
                 efficient_swaps = [o for o in house_positions if o[1] != buildingType]
                 print "Trying to swap.."
+
+                # select another random building from this list
                 swap_id, swap_buildingType, swap_x, swap_y, swap_score = efficient_swaps[
                     random.randint(0, len(efficient_swaps) - 1)]
 
@@ -405,15 +373,13 @@ def start_stochastic_hillClimbing(favor_free_space = False):
                 new_house_comparison = [swap_id, swap_buildingType, x + center_correction_x, y + center_correction_y]
 
 
-                temp_score_list, temp_score, temp_value = calculate_score(
+                new_score_list, new_score, new_value = calculate_score(
                     temp_score_list + [new_house] + [new_house_comparison])
-                if not new_value or temp_value > new_value:
-                    new_score_list, new_score, new_value = temp_score_list, temp_score, temp_value
 
             # otherwise move in a random direction
             else:
                 # generate a random direction (8 possible directions with equal chance)
-                move_magnitude = random.randint(1,hillClimbing_max_steps)
+                move_magnitude = random.randint(1, max_steps)
                 d = 1/8.0
                 rand_d = random.random()
 
@@ -449,10 +415,10 @@ def start_stochastic_hillClimbing(favor_free_space = False):
                     print "Higher or equal value found: " + str(new_value)
                     update_game_display(new_score_list)
 
-
-
             button("STOP", mapWidth * tileSize + 275, 175, 100, 25, (237, 28, 36), (191, 15, 23), stop_algorithm)
+            # Write row of data to csv file
             writer.writerow([iteration,total_value,total_extra_free_space, house_positions, water_bodies_list])
+            # flip display and get events (clicks)
             pygame.display.flip()
             pygame.event.get()
 
@@ -471,10 +437,12 @@ def start_simulated_annealing(favor_free_space = False):
     with open(file_name, "wb") as csvfile:
         writer = csv.writer(csvfile, delimiter=';')
         writer.writerow(["iteration","total_value","total_score", "score_list","water_list"])
-        # initial temperature for Boltzman distribution, this will cool down approaching zero
+        # initial temperature for Boltzmann distribution, this will cool down approaching zero
         if favor_free_space:
-            temp = total_extra_free_space / houseAmount
+            # if algorithms favors free space, the initial temperature is..
+            temp = total_extra_free_space / float(houseAmount)
         else:
+            # if algorithms favors value, the initial temperature is..
             temp = total_value / houseAmount / 1000
         climbing = True
         while climbing is True:
@@ -508,7 +476,7 @@ def start_simulated_annealing(favor_free_space = False):
             # otherwise move in a random direction
             else:
                 # generate a random direction (8 possible directions with equal chance)
-                move_magnitude = random.randint(1,hillClimbing_max_steps)
+                move_magnitude = random.randint(1, max_steps)
                 d = 1/8.0
                 rand_d = random.random()
 
@@ -547,16 +515,16 @@ def start_simulated_annealing(favor_free_space = False):
                 elif new_score_list:
                     if not favor_free_space:
                         # if difference is based on total value (which will be high numbers), we need to scale this value down
-                        value_difference = (total_value - new_value) / 100
+                        value_difference = (total_value - new_value) / 1000
 
                     else:
                         value_difference = total_extra_free_space - new_score
 
-
-                    # Important math here deciding the cooling schedule
+                    # Important math here deciding the acceptance chance
                     acceptance_chance = math.exp(-value_difference / temp) / 2 # chance between 0.5 and eventually 0
                     probability = random.random()
-                    print probability, acceptance_chance, value_difference
+                    print "acceptance chance: " + str(acceptance_chance), "difference: -" + str(value_difference)
+
                     if probability < acceptance_chance:
                         house_positions = new_score_list
                         total_value = new_value
@@ -580,15 +548,18 @@ def start_simulated_annealing(favor_free_space = False):
             pygame.display.flip()
 
 
+### END OF ALGORITHMS ###
+
+### USER INTERFACE ###
+
 # this function updates the display given a list of house positions and scores
-# house_scores contains a arrays representing houses
-# indexes are: 0 = id, 1 = house type, 2 =
+# house_scores contains arrays representing houses
 def update_game_display(house_scores):
     if not house_scores:
         house_scores = []
 
     # display the raster-like background
-    texture = pygame.transform.scale(textures[grass2], (mapWidth * tileSize,mapHeight * tileSize))
+    texture = pygame.transform.scale(textures[grass], (mapWidth * tileSize,mapHeight * tileSize))
     display.blit(texture, (0,0))
 
     # draw water if any
@@ -636,11 +607,13 @@ def update_game_display(house_scores):
     # update the display
     pygame.display.update()
 
+
 # converting text objects to a surface and rectangle..
 def text_objects(msg, font):
     textSurface = font.render(msg, 1, (255, 255, 255))
     textRect = textSurface.get_rect()
     return textSurface, textRect
+
 
 # function to spawn buttons
 def button(msg, x, y, w, h, ic, ac, action=None, params=None):
@@ -661,44 +634,30 @@ def button(msg, x, y, w, h, ic, ac, action=None, params=None):
     textRect.center = ((x + (w / 2)), (y + (h / 2)))
     display.blit(textSurf, textRect)
 
-# The random placement seems very inefficient if the house amount is 60, grid performs better
-def place_random_and_update():
-    pr = cProfile.Profile()
-    pr.enable()
-    global house_positions
-    house_positions = place_houses_random()
-    house_positions, total_score, total_value = calculate_score(house_positions)
-    update_game_display(house_positions)
-    pr.disable()
-    # after your program ends
-    pr.print_stats(sort="calls")
 
 # function to place houses random according to place_grid function, and update
 def place_grid_and_update():
-    pr = cProfile.Profile()
-    pr.enable()
     global house_positions
     house_positions = place_houses_grid()
     house_positions, total_score, total_value = calculate_score(house_positions)
     update_game_display(house_positions)
-    pr.disable()
-    # after your program ends
-    pr.print_stats(sort="calls")
 
 
+# Reset water and houses in random positions
 def reset_water_random():
     global water_bodies_list
     water_bodies_list = place_water_random()
     place_grid_and_update()
 
 
+# Put water in a specific position (see report) and spawn houses random
 def place_water_1():
     global water_bodies_list
     water_bodies_list = [[61, 80, 45, 160, 40], [62, 80, 130, 160, 40], [63, 80, 215, 160, 40]]
     place_grid_and_update()
 
 
-# writes a sample of 1000 randomly placed solutions, and shows the highest VALUE found at the end
+# writes a sample of 1000 randomly placed solutions, and shows the highest VALUE found among those at the end
 def random_sample(function = place_houses_grid):
     global house_positions
     file_date = datetime.datetime.now().strftime(r"%H;%M;%S %d-%m-%y")
@@ -712,7 +671,6 @@ def random_sample(function = place_houses_grid):
             # Display iteration
             iteration_text = font.render("Writing row: " + str(i) + "               ", 1, (250, 250, 250), (0, 0, 0))
             display.blit(iteration_text, (mapWidth * tileSize + 50, (mapHeight * tileSize) / 2 - 50))
-            pygame.display.flip()
             # calculate score based on placing function
             scoreList, totalScore, totalValue = calculate_score(function())
             writer.writerow([totalValue,totalScore,scoreList,water_bodies_list])
@@ -720,10 +678,14 @@ def random_sample(function = place_houses_grid):
                 highest_value = totalValue
                 highest_scoreList = scoreList
             pygame.event.get()
+            pygame.display.flip()
     house_positions = highest_scoreList
     update_game_display(highest_scoreList)
+    # save a screenshot of the highest value
     pygame.image.save(display, "screenshot "+ file_date +".jpeg")
 
+
+# changes amount of houses that will be placed
 def setHouseAmount(amount):
     global houseAmount
     houseAmount = amount
@@ -735,10 +697,10 @@ def setHouseAmount(amount):
     place_grid_and_update()
 
 
+# Spawn random water and houses if the simulation opens
 water_bodies_list = place_water_random()
 house_positions, total_value, total_score = calculate_score(place_houses_grid())
 update_game_display(house_positions)
-
 
 # The main "game" loop of pygame, running until program exits
 running = True
@@ -748,22 +710,21 @@ while running:
     for event in pygame.event.get():
         # if the user wants to quit
         if event.type == QUIT:
-            # and the game and close the window
+            # end the game and close the window
             pygame.quit()
             sys.exit()
 
     # Spawn all the buttons on screen..
-    button("Random", mapWidth * tileSize + 25, 25, 100, 25, colors["lightgrey"], colors["darkgrey"], place_random_and_update)
+    button("Random", mapWidth * tileSize + 25, 25, 100, 25, colors["lightgrey"], colors["darkgrey"], place_grid_and_update)
     button("R. Sample", mapWidth * tileSize + 25, 75, 100, 25, colors["lightgrey"], colors["darkgrey"], random_sample)
-    button("Setting 1", mapWidth * tileSize + 25, 125, 100, 25, colors["lightgrey"], colors["darkgrey"], place_grid_and_update)
 
     button("Rand water", mapWidth * tileSize + 25, mapHeight * tileSize - 75, 100, 25, colors["blue"], colors["darkblue"], reset_water_random)
     button("water 1", mapWidth * tileSize + 150, mapHeight * tileSize - 75, 100, 25, colors["blue"], colors["darkblue"], place_water_1)
     # hide these buttons if map is empty
     if len(house_positions) > 0:
-        button("Sim Anneal", mapWidth * tileSize + 275, 125, 100, 25, colors["lightgrey"], colors["darkgrey"], start_simulated_annealing, True)
+        button("Sim Anneal", mapWidth * tileSize + 275, 125, 100, 25, colors["lightgrey"], colors["darkgrey"], start_simulated_annealing, False)
         button("Hillclimbing", mapWidth * tileSize + 275, 25, 100, 25, colors["lightgrey"], colors["darkgrey"], start_hillClimbing)
-        button("Stoch. Hill", mapWidth * tileSize + 275, 75, 100, 25, colors["lightgrey"], colors["darkgrey"], start_stochastic_hillClimbing,True)
+        button("Stoch. Hill", mapWidth * tileSize + 275, 75, 100, 25, colors["lightgrey"], colors["darkgrey"], start_stochastic_hillClimbing, False)
 
     # Buttons to adjust amount of houses
     if houseAmount == 20:
@@ -779,5 +740,5 @@ while running:
         button("40", mapWidth * tileSize + 150, mapHeight * tileSize - 25, 100, 25, colors["lightgrey"], colors["darkgrey"],setHouseAmount,40)
         button("60", mapWidth * tileSize + 275, mapHeight * tileSize - 25, 100, 25, colors["green"], colors["green"])
     pygame.display.update()
-    # limit to 60 fps
+    # limit to 60 fps while in this game loop
     clock.tick(60)
